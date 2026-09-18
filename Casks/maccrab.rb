@@ -1,6 +1,6 @@
 cask "maccrab" do
-  version "1.21.5"
-  sha256 "9eb6f49389af910e9d1bad14b26d2510aebd2ed2e874bbd2f464f36b664c529b"
+  version "1.22.0"
+  sha256 "4c481b4e7e6146d446fbc14ac597c45e9f5b6b4d9f7cbaed73db91b20ade8dfe"
 
   url "https://github.com/peterhanily/maccrab/releases/download/v#{version}/MacCrab-v#{version}.dmg"
   name "MacCrab"
@@ -10,8 +10,8 @@ cask "maccrab" do
   depends_on macos: :ventura
 
   app "MacCrab.app"
-  binary "bin/maccrabctl"
-  binary "bin/maccrab-mcp"
+  binary "#{appdir}/MacCrab.app/Contents/Resources/bin/maccrabctl"
+  binary "#{appdir}/MacCrab.app/Contents/Resources/bin/maccrab-mcp"
 
   postflight do
     # ── Clean up pre-1.3.0 artefacts ────────────────────────────────
@@ -60,7 +60,7 @@ cask "maccrab" do
       end
     end
 
-    # ── Install rules ───────────────────────────────────────────────
+    # ── Prepare support directories ────────────────────────────────
     system_command "/bin/mkdir",
                    args: ["-p", "/Library/Application Support/MacCrab/compiled_rules/sequences"],
                    sudo: true
@@ -75,52 +75,18 @@ cask "maccrab" do
     system_command "/bin/chmod",
                    args: ["1777", "/Library/Application Support/MacCrab/inbox"],
                    sudo: true
-    Dir.glob("#{staged_path}/compiled_rules/*.json").each do |f|
-      system_command "/bin/cp", args: [f, "/Library/Application Support/MacCrab/compiled_rules/"], sudo: true
-    end
-    Dir.glob("#{staged_path}/compiled_rules/sequences/*.json").each do |f|
-      system_command "/bin/cp", args: [f, "/Library/Application Support/MacCrab/compiled_rules/sequences/"], sudo: true
-    end
-    # Graph rules (v1.12.0). manifest.json hashes these too, so omitting them
-    # makes the app's manifest verification fail → re-sync admin prompt + false
-    # tamper banner, AND leaves all 6 graph rules uninstalled (TraceGraph
-    # detection disabled on brew installs).
-    Dir.glob("#{staged_path}/compiled_rules/graph/*.json").each do |f|
-      system_command "/bin/cp", args: [f, "/Library/Application Support/MacCrab/compiled_rules/graph/"], sudo: true
-    end
-    # Copy the .bundle_version marker + manifest.json alongside the rules.
-    # Without them the app's RuleBundleInstaller reads installedVersion="" on
-    # first launch, thinks the rules are stale, and re-syncs WITH an admin
-    # password prompt — even though brew just installed the correct rules.
-    ["compiled_rules/.bundle_version", "compiled_rules/manifest.json"].each do |rel|
-      src = "#{staged_path}/#{rel}"
-      system_command "/bin/cp", args: [src, "/Library/Application Support/MacCrab/#{rel}"], sudo: true if File.exist?(src)
-    end
+    # Never update compiled_rules file-by-file in cask postflight. That can
+    # destroy the previous verified corpus on ENOSPC/interruption and makes
+    # upgrades needlessly double rule-storage use. The root System Extension
+    # verifies its own code-sealed corpus and atomically publishes it before
+    # starting any rule reader. Existing rules therefore survive upgrades
+    # untouched until that transaction succeeds.
 
     # The system extension itself is not installed here. It ships
     # inside MacCrab.app/Contents/Library/SystemExtensions/ and is
     # registered with sysextd the first time the user opens the app
     # and clicks "Enable Protection" (see SystemExtensionPanel.swift).
 
-    # ── CLI symlink: point at the in-app binary, not the caskroom one
-    # ───────────────────────────────────────────────────────────────────
-    # The `binary` stanza above made brew install
-    # /opt/homebrew/bin/maccrabctl as a symlink to the cask's
-    # version-pinned copy in $HOMEBREW_PREFIX/Caskroom/maccrab/X.Y.Z/.
-    # That copy is frozen at install time. When Sparkle updates
-    # MacCrab.app in-place to v1.10+, the terminal CLI keeps
-    # resolving to the v1.8 binary in the Caskroom path — and any
-    # CLI subcommand added since then ("intel refresh", "trace ...",
-    # "unsuppress --id") fails with "Unknown command". Replace the
-    # symlink so it points at the CLI bundled inside MacCrab.app,
-    # which Sparkle DOES update atomically.
-    ["maccrabctl", "maccrab-mcp"].each do |cli|
-      target = "/Applications/MacCrab.app/Contents/Resources/bin/#{cli}"
-      link   = "#{HOMEBREW_PREFIX}/bin/#{cli}"
-      next unless File.executable?(target)
-      system_command "/bin/rm", args: ["-f", link], must_succeed: false
-      system_command "/bin/ln", args: ["-s", target, link], must_succeed: false
-    end
   end
 
   # v1.7.11 cask-only patch: clean up the user-context LaunchAgent that
@@ -202,9 +168,8 @@ cask "maccrab" do
     intentionally leaves the Endpoint Security extension registered (Homebrew
     runs the same uninstall steps on every `brew upgrade`, so forcing a
     deactivate here would drop protection on routine upgrades). To fully
-    remove the extension, first click "Disable Protection" on MacCrab's
-    Overview tab, or run the bundled scripts/uninstall.sh before uninstalling.
-    Any leftover entry clears after a reboot (confirm with
+    remove the extension, click "Disable Protection" on MacCrab's
+    Overview tab before uninstalling. Any leftover entry clears after a reboot (confirm with
     `systemextensionsctl list`).
 
     Your data (alerts, baselines, settings) is preserved at
