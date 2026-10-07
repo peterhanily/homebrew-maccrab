@@ -19,8 +19,8 @@ Access** in **System Settings → Privacy & Security**.
 ## Updating / uninstalling
 
 ```bash
-brew upgrade --cask maccrab      # or use the in-app Sparkle auto-update
-brew uninstall --cask maccrab    # add --zap to also remove app data
+brew upgrade --cask peterhanily/maccrab/maccrab    # or use the in-app Sparkle auto-update
+brew uninstall --cask maccrab                      # add --zap to also remove app data
 ```
 
 ## About this repo
